@@ -1,0 +1,22 @@
+{
+  "analysis": "Dos fundadores talentosos (Director Creativo + Productor) están iniciando una agencia de publicidad/productora en Colombia sin estructura empresarial ni stack operativo. Necesitan simultáneamente un plan de negocio viable y una infraestructura tecnológica mínima que les permita operar profesionalmente con presupuesto limitado, aprovechando IA y automatización para compensar la falta de equipo interno.",
+  "dimensions": {
+    "technical": [
+      "Stack operativo mínimo viable para una productora/agencia (gestión de proyectos, archivos pesados de video, colaboración con freelancers)",
+      "Automatización e IA aplicada a flujos creativos y de producción (preproducción, edición, gestión de clientes)",
+      "Infraestructura de almacenamiento y entrega de assets audiovisuales con presupuesto bajo",
+      "Herramientas de presentación profesional (portfolio, propuestas, branding) para parecer más grandes de lo que son"
+    ],
+    "business": [
+      "Modelo de negocio para agencia/productora en etapa 0 con equipo core de 2 + red de freelancers",
+      "Estrategia de pricing y posicionamiento en el mercado colombiano de publicidad/audiovisual",
+      "Go-to-market: cómo conseguir los primeros clientes aprovechando los contactos existentes",
+      "Estructura legal/financiera mínima para una MiPyme colombiana (facturación, impuestos, contratos con freelancers)",
+      "Diferenciación competitiva frente a agencias establecidas y freelancers individuales"
+    ]
+  },
+  "queries": {
+    "atlas": "Una productora audiovisual y agencia de publicidad colombiana está naciendo con dos fundadores (un Director Creativo con conocimiento en producción y un Productor) y una red de freelancers para tercerizar el resto. No tienen NADA estructurado tecnológicamente y el presupuesto es muy limitado (asume <USD 150/mes en herramientas para empezar). Necesito que diseñes el stack operativo mínimo viable que les permita operar profesionalmente desde el día 1, considerando: (1) gestión de proyectos y clientes (CRM + project management), (2) manejo y entrega de archivos audiovisuales pesados (video 4K, raws), (3) colaboración con freelancers externos, (4) presentación profesional al cliente (propuestas, portfolio, branding), (5) automatización e integración con IA para potenciar flujos creativos y de producción (pre-producción, guiones, storyboards, edición asistida, transcripción, etc.). Quiero recomendaciones concretas de herramientas (con tier gratuito o económico cuando sea posible), una arquitectura de cómo se conectan entre sí, y un roadmap de adopción por fases (qué implementar mes 1, mes 3, mes 6) escalado al crecimiento. Sé específico, opinionado y elite — nada de listas genéricas.",
+    "hermes": "Una agencia de publicidad y productora audiovisual colombiana (La Reina Films) está naciendo con dos fundadores: un Director Creativo con conocimiento en producción y un Productor. Tienen contactos en el medio y una red de profesionales para tercerizar otras áreas. Son excelentes en su oficio pero NO tienen plan estratégico, modelo de negocio claro, ni estructura comercial. Presupuesto limitado. Necesito un análisis estratégico completo que cubra: (1) modelos de negocio viables para este tipo de agencia/productora con equipo core mínimo + red de freelancers (agencia de servicios, productora de contenido propio, híbrido, nicho vertical, etc.) y cuál recomiendas para ellos, (2) estrategia de pricing y posicionamiento en el mercado colombiano de publicidad/audiovisual (¿competir con productoras establecidas? ¿con freelancers? ¿qué nicho?), (3) go-to-market concreto para conseguir los primeros 3-5 clientes aprovechando contactos existentes, (4) estructura legal y financiera mínima para una MiPyme colombiana (tipo de sociedad, régimen tributario, contratos con freelancers, facturación), (5) principales riesgos comerciales y cómo mitigarlos, (6) diferenciación competitiva real — qué pueden ofrecer dos fundadores que una agencia grande no. Quiero recomendaciones accionables, no consultoría genérica. Asume contexto colombiano real (DIAN, régimen simple, etc.)."
+  }
+}
