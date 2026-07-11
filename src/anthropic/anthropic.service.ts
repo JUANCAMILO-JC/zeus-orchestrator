@@ -14,7 +14,7 @@ export class AnthropicService {
       throw new Error('ANTHROPIC_API_KEY is not set');
     }
     this.client = new Anthropic({ apiKey });
-    this.model = this.config.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-5';
+    this.model = this.config.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
   }
 
   /**
@@ -32,19 +32,38 @@ export class AnthropicService {
     this.logger.log(`[${agentName}] Calling ${this.model}...`);
     const start = Date.now();
 
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
+    let response: Anthropic.Message;
+    try {
+      response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+    } catch (err) {
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(
+          `[${agentName}] API error ${err.status ?? 'conn'}: ${err.message}`,
+        );
+      }
+      throw err;
+    }
 
     const elapsed = Date.now() - start;
     const tokensIn = response.usage.input_tokens;
     const tokensOut = response.usage.output_tokens;
     this.logger.log(
-      `[${agentName}] Done in ${elapsed}ms · in:${tokensIn} out:${tokensOut} tokens`
+      `[${agentName}] Done in ${elapsed}ms · in:${tokensIn} out:${tokensOut} tokens · stop:${response.stop_reason}`,
     );
+
+    if (response.stop_reason === 'refusal') {
+      throw new Error(`[${agentName}] The model refused to answer this request`);
+    }
+    if (response.stop_reason === 'max_tokens') {
+      this.logger.warn(
+        `[${agentName}] Response truncated at max_tokens=${maxTokens} — consider raising it`,
+      );
+    }
 
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
@@ -54,26 +73,64 @@ export class AnthropicService {
   }
 
   /**
-   * Llama al modelo y parsea la respuesta como JSON.
-   * Útil para el modo Decomposición de ZEUS.
+   * Llama al modelo y parsea la respuesta como JSON, con validación
+   * estructural opcional y un reintento correctivo si el modelo
+   * devuelve JSON inválido. Útil para el modo Decomposición de ZEUS.
    */
   async completeJson<T>(params: {
     systemPrompt: string;
     userMessage: string;
     maxTokens?: number;
     agentName?: string;
+    /** Devuelve un mensaje de error si la estructura es inválida, o null si es válida. */
+    validate?: (value: unknown) => string | null;
   }): Promise<T> {
-    const raw = await this.complete(params);
-    const cleaned = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
-    try {
-      return JSON.parse(cleaned) as T;
-    } catch (err) {
-      this.logger.error(`Failed to parse JSON from ${params.agentName}: ${cleaned}`);
-      throw new Error(`Invalid JSON from ${params.agentName}: ${err.message}`);
+    const { validate, ...completeParams } = params;
+    const agentName = params.agentName ?? 'agent';
+    const maxAttempts = 2;
+    let userMessage = params.userMessage;
+    let lastError = '';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const raw = await this.complete({ ...completeParams, userMessage });
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(this.extractJson(raw));
+        const validationError = validate ? validate(parsed) : null;
+        if (!validationError) {
+          return parsed as T;
+        }
+        lastError = validationError;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+
+      this.logger.warn(
+        `[${agentName}] Attempt ${attempt}/${maxAttempts} returned invalid JSON (${lastError})`,
+      );
+      userMessage =
+        `${params.userMessage}\n\n` +
+        `IMPORTANTE: tu respuesta anterior no fue un JSON válido (${lastError}). ` +
+        `Responde ÚNICAMENTE con el objeto JSON pedido, sin texto adicional ni code fences.`;
     }
+
+    throw new Error(
+      `[${agentName}] Invalid JSON after ${maxAttempts} attempts: ${lastError}`,
+    );
+  }
+
+  /**
+   * Extrae el objeto JSON de una respuesta que puede venir envuelta en
+   * code fences o con texto alrededor.
+   */
+  private extractJson(raw: string): string {
+    const cleaned = raw.replace(/```(?:json)?/gi, '').trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end === -1 || end < start) {
+      throw new Error('no JSON object found in response');
+    }
+    return cleaned.slice(start, end + 1);
   }
 }

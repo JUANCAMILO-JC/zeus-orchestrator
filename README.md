@@ -36,6 +36,8 @@ POST /orchestrate
 
 ## Setup
 
+Requiere **Node.js >= 18** (el SDK de Anthropic usa `fetch` global).
+
 ```bash
 # 1. Instalar dependencias
 npm install
@@ -68,7 +70,40 @@ curl -X POST http://localhost:3000/orchestrate \
   }'
 ```
 
-### Test rápido
+Si el mismo brief (normalizado) ya fue orquestado en esta sesión del
+servidor, la respuesta sale del caché en memoria con `"fromCache": true`.
+Si un arquitecto falla, el flujo continúa sin él y el error queda
+registrado en el campo `errors` de la respuesta.
+
+### Streaming (SSE)
+
+`POST /orchestrate/stream` devuelve Server-Sent Events: un evento
+`phase` por cada fase (`start`/`complete`/`skipped`/`error`) y un
+evento `result` final con el resultado completo.
+
+```bash
+curl -N -X POST http://localhost:3000/orchestrate/stream \
+  -H "Content-Type: application/json" \
+  -d '{"brief": "..."}'
+```
+
+### Auditoría de orquestaciones
+
+Cada orquestación se persiste como JSON en `data/orchestrations/`.
+
+```bash
+curl http://localhost:3000/orchestrate/runs        # lista (id, fecha, brief)
+curl http://localhost:3000/orchestrate/runs/<id>   # resultado completo
+```
+
+### Tests y lint
+
+```bash
+npm test      # unit tests (Jest)
+npm run lint  # ESLint
+```
+
+### Test rápido end-to-end
 
 Con el server corriendo en otra terminal:
 
@@ -122,9 +157,11 @@ todos los outputs anteriores como input.
 
 ## Próximos pasos
 
-- [ ] Persistencia: guardar cada orquestación en BD para auditar
-- [ ] Streaming: devolver outputs incrementales vía SSE
-- [ ] Caché: si el mismo brief llega dos veces, no re-ejecutar
+- [x] Persistencia: cada orquestación se guarda en `data/orchestrations/`
+- [x] Streaming: eventos de fase vía SSE (`POST /orchestrate/stream`)
+- [x] Caché: mismo brief dos veces → resultado en memoria sin re-ejecutar
 - [ ] Más arquitectos: HEFESTO (datos), TEMIS (legal), APOLO (producto)
 - [ ] Conferencia entre arquitectos: que ATLAS pueda ver el output de
       HERMES y refinar su respuesta antes de la síntesis final
+- [ ] Streaming de tokens: hoy el SSE emite por fase; el siguiente nivel
+      es streamear los tokens del modelo dentro de cada fase

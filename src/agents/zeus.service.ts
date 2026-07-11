@@ -17,6 +17,33 @@ export interface DecompositionResult {
   };
 }
 
+/**
+ * Valida la estructura mínima que el orquestador necesita para operar.
+ * Devuelve un mensaje de error o null si es válida.
+ */
+export function validateDecomposition(value: unknown): string | null {
+  const v = value as Partial<DecompositionResult>;
+  if (!v || typeof v !== 'object') {
+    return 'la respuesta no es un objeto';
+  }
+  if (typeof v.analysis !== 'string' || v.analysis.length === 0) {
+    return 'falta el campo "analysis" (string)';
+  }
+  if (!v.queries || typeof v.queries !== 'object') {
+    return 'falta el campo "queries" (objeto)';
+  }
+  for (const key of ['atlas', 'hermes'] as const) {
+    const q = v.queries[key];
+    if (q !== null && q !== undefined && typeof q !== 'string') {
+      return `"queries.${key}" debe ser string o null`;
+    }
+  }
+  if (v.queries.atlas == null && v.queries.hermes == null) {
+    return 'ambas queries son null — al menos un arquitecto debe ser consultado';
+  }
+  return null;
+}
+
 @Injectable()
 export class ZeusService {
   constructor(private readonly anthropic: AnthropicService) {}
@@ -25,12 +52,27 @@ export class ZeusService {
    * Modo 1: descompone el brief en consultas para cada arquitecto.
    */
   async decompose(brief: string): Promise<DecompositionResult> {
-    return this.anthropic.completeJson<DecompositionResult>({
+    const result = await this.anthropic.completeJson<DecompositionResult>({
       systemPrompt: ZEUS_DECOMPOSITION_PROMPT,
       userMessage: `BRIEF DEL USUARIO:\n\n${brief}`,
       agentName: 'ZEUS-decompose',
       maxTokens: 2048,
+      validate: validateDecomposition,
     });
+
+    // Normaliza campos opcionales para que el resto del pipeline no
+    // tenga que defenderse de undefined.
+    return {
+      analysis: result.analysis,
+      dimensions: {
+        technical: result.dimensions?.technical ?? [],
+        business: result.dimensions?.business ?? [],
+      },
+      queries: {
+        atlas: result.queries.atlas ?? null,
+        hermes: result.queries.hermes ?? null,
+      },
+    };
   }
 
   /**
