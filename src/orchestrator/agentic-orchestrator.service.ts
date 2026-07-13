@@ -31,6 +31,8 @@ export interface AgenticEvent {
   error?: string;
 }
 
+export type AgenticListener = (event: AgenticEvent) => void;
+
 export interface AgenticOrchestrationResult {
   id: string;
   createdAt: string;
@@ -47,7 +49,15 @@ export interface AgenticOrchestrationResult {
   };
 }
 
-type AgenticListener = (event: AgenticEvent) => void;
+/** Resultado de un solo turno del loop agéntico, reutilizable por sesiones multi-turno. */
+export interface AgenticTurnResult {
+  /** Historial completo de mensajes tras el turno — pásalo tal cual al siguiente turno. */
+  messages: Anthropic.Beta.BetaMessageParam[];
+  synthesis: string;
+  consultations: ConsultationRecord[];
+  iterations: number;
+  usage: { inputTokens: number; outputTokens: number };
+}
 
 const MAX_ITERATIONS = 8;
 
@@ -68,11 +78,61 @@ export class AgenticOrchestratorService {
     private readonly store: OrchestrationStoreService,
   ) {}
 
+  /**
+   * Modo one-shot: crea el turno inicial a partir de un brief y persiste
+   * el resultado. No conserva el historial — para conversación multi-turno
+   * usa `runTurn` directamente (ver SessionsService).
+   */
   async orchestrate(
     brief: string,
     onEvent?: AgenticListener,
   ): Promise<AgenticOrchestrationResult> {
     const t0 = Date.now();
+    this.logger.log('═══ Starting agentic orchestration ═══');
+
+    const initialMessages: Anthropic.Beta.BetaMessageParam[] = [
+      { role: 'user', content: `BRIEF DEL USUARIO:\n\n${brief}` },
+    ];
+    const turn = await this.runTurn(initialMessages, onEvent);
+    const totalElapsedMs = Date.now() - t0;
+    this.logger.log(
+      `═══ Agentic orchestration complete in ${totalElapsedMs}ms · ` +
+      `${turn.iterations} iterations · ${turn.consultations.length} consultations ═══`,
+    );
+
+    const result: AgenticOrchestrationResult = {
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      mode: 'agentic',
+      brief,
+      consultations: turn.consultations,
+      iterations: turn.iterations,
+      synthesis: turn.synthesis,
+      metrics: {
+        totalElapsedMs,
+        inputTokens: turn.usage.inputTokens,
+        outputTokens: turn.usage.outputTokens,
+      },
+    };
+
+    try {
+      await this.store.save(result);
+    } catch (err) {
+      this.logger.warn(`Failed to persist orchestration ${result.id}: ${err}`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Corre un solo turno del loop agéntico sobre un historial de mensajes
+   * dado. No persiste nada — el llamador decide qué hacer con el
+   * historial actualizado que devuelve (ej. guardarlo como sesión).
+   */
+  async runTurn(
+    messages: Anthropic.Beta.BetaMessageParam[],
+    onEvent?: AgenticListener,
+  ): Promise<AgenticTurnResult> {
     const consultations: ConsultationRecord[] = [];
 
     const emit = (event: AgenticEvent) => {
@@ -135,14 +195,12 @@ export class AgenticOrchestratorService {
       this.hermes,
     );
 
-    this.logger.log('═══ Starting agentic orchestration ═══');
-
     const runner = this.anthropic.sdk.beta.messages.toolRunner({
       model: this.anthropic.modelId,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
       system: ZEUS_AGENTIC_PROMPT,
-      messages: [{ role: 'user', content: `BRIEF DEL USUARIO:\n\n${brief}` }],
+      messages,
       tools: [
         consultAtlas,
         consultHermes,
@@ -199,29 +257,17 @@ export class AgenticOrchestratorService {
       );
     }
 
-    const totalElapsedMs = Date.now() - t0;
-    this.logger.log(
-      `═══ Agentic orchestration complete in ${totalElapsedMs}ms · ` +
-      `${iterations} iterations · ${consultations.length} consultations ═══`,
-    );
+    // El runner acumula internamente el historial completo (mensajes de
+    // usuario, respuestas del asistente y resultados de tools) — es lo
+    // que hay que persistir para poder continuar la conversación después.
+    const updatedMessages = runner.params.messages ?? messages;
 
-    const result: AgenticOrchestrationResult = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      mode: 'agentic',
-      brief,
+    return {
+      messages: updatedMessages,
+      synthesis,
       consultations,
       iterations,
-      synthesis,
-      metrics: { totalElapsedMs, inputTokens, outputTokens },
+      usage: { inputTokens, outputTokens },
     };
-
-    try {
-      await this.store.save(result);
-    } catch (err) {
-      this.logger.warn(`Failed to persist orchestration ${result.id}: ${err}`);
-    }
-
-    return result;
   }
 }

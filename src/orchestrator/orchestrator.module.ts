@@ -5,10 +5,19 @@ import { OrchestratorController } from './orchestrator.controller';
 import { OrchestratorService } from './orchestrator.service';
 import { AgenticOrchestratorService } from './agentic-orchestrator.service';
 import { OrchestrationStoreService } from './orchestration-store.service';
+import { SessionsController } from './sessions.controller';
+import { SessionsService } from './sessions.service';
+import { SessionStoreService } from './session-store.service';
 
 @Module({
   imports: [AgentsModule, AnthropicModule],
-  controllers: [OrchestratorController],
-  providers: [OrchestratorService, AgenticOrchestratorService, OrchestrationStoreService],
+  controllers: [OrchestratorController, SessionsController],
+  providers: [
+    OrchestratorService,
+    AgenticOrchestratorService,
+    OrchestrationStoreService,
+    SessionsService,
+    SessionStoreService,
+  ],
 })
 export class OrchestratorModule {}

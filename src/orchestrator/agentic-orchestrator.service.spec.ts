@@ -17,12 +17,20 @@ function makeMessage(
   return { content, stop_reason: stopReason, usage };
 }
 
-/** Runner falso: itera los mensajes dados y registra pushMessages. */
-function makeFakeRunner(messages: FakeMessage[]) {
+/**
+ * Runner falso: itera los mensajes dados, registra pushMessages y expone
+ * `.params.messages` como el runner real (historial acumulado que el
+ * servicio persiste para continuar la conversación en otro turno).
+ */
+function makeFakeRunner(
+  messages: FakeMessage[],
+  finalHistory: any[] = [{ role: 'assistant', content: 'historial-simulado' }],
+) {
   const pushed: any[] = [];
   return {
     pushed,
     pushMessages: (...msgs: any[]) => pushed.push(...msgs),
+    params: { messages: finalHistory },
     async *[Symbol.asyncIterator]() {
       for (const m of messages) {
         yield m;
