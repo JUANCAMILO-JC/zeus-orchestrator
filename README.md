@@ -4,7 +4,16 @@ Orquestador en NestJS del Consejo de Arquitectos AI. ZEUS coordina a ATLAS
 (arquitectura técnica) y HERMES (estrategia de negocio) para producir
 respuestas integradas a partir de un brief.
 
-## Arquitectura
+Tiene dos modos:
+
+- **Pipeline** (`POST /orchestrate`) — flujo fijo de 3 fases:
+  decomposición → arquitectos en paralelo → síntesis.
+- **Agéntico** (`POST /orchestrate/agentic`) — ZEUS corre en un loop de
+  tool-use donde él decide a quién consultar, puede re-consultar a un
+  arquitecto para resolver tensiones y puede usar búsqueda web para
+  fundamentar la síntesis con datos reales.
+
+## Arquitectura (modo pipeline)
 
 ```
 POST /orchestrate
@@ -86,6 +95,42 @@ curl -N -X POST http://localhost:3000/orchestrate/stream \
   -H "Content-Type: application/json" \
   -d '{"brief": "..."}'
 ```
+
+### Modo agéntico
+
+```bash
+curl -X POST http://localhost:3000/orchestrate/agentic \
+  -H "Content-Type: application/json" \
+  -d '{"brief": "..."}'
+
+# o con streaming de las acciones del agente:
+curl -N -X POST http://localhost:3000/orchestrate/agentic/stream \
+  -H "Content-Type: application/json" \
+  -d '{"brief": "..."}'
+```
+
+En este modo ZEUS dirige el loop con tres herramientas:
+
+- `consult_atlas` / `consult_hermes` — los arquitectos como tools; ZEUS
+  redacta queries autocontenidas y puede re-consultar si detecta
+  tensiones entre las perspectivas.
+- `web_search` — búsqueda web server-side de Anthropic para fundamentar
+  la síntesis con datos actuales (precios de competidores, costos, etc.).
+
+El stream emite eventos `agent` (`iteration`, `commentary`, `tool_call`,
+`tool_result`, `tool_error`, `web_search`) y un `result` final que
+incluye el log de consultas (`consultations`), iteraciones y tokens.
+
+Notas del modo agéntico:
+
+- Requiere un modelo con soporte de `web_search_20260209` y adaptive
+  thinking (Opus 4.6+, Sonnet 4.6+; el default `claude-opus-4-8` y
+  `claude-sonnet-4-6` funcionan).
+- Cuesta y tarda más que el pipeline (el loop corre 2+ iteraciones,
+  ~2-4 min y ~40K tokens de input en un brief típico), a cambio de
+  consultas dinámicas y síntesis fundamentada en datos.
+- No usa caché (cada corrida puede investigar distinto); sí persiste
+  en `data/orchestrations/` con `"mode": "agentic"`.
 
 ### Auditoría de orquestaciones
 
