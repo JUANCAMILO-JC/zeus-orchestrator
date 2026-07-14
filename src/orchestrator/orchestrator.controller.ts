@@ -10,8 +10,13 @@ import {
 import { Response } from 'express';
 import { OrchestratorService, OrchestrationResult } from './orchestrator.service';
 import {
+  AgenticOrchestratorService,
+  AgenticOrchestrationResult,
+} from './agentic-orchestrator.service';
+import {
   OrchestrationStoreService,
   OrchestrationSummary,
+  PersistedRun,
 } from './orchestration-store.service';
 import { BriefDto } from './brief.dto';
 
@@ -19,6 +24,7 @@ import { BriefDto } from './brief.dto';
 export class OrchestratorController {
   constructor(
     private readonly orchestrator: OrchestratorService,
+    private readonly agentic: AgenticOrchestratorService,
     private readonly store: OrchestrationStoreService,
   ) {}
 
@@ -66,6 +72,51 @@ export class OrchestratorController {
   }
 
   /**
+   * POST /orchestrate/agentic
+   * Body: { "brief": "..." }
+   *
+   * Modo agéntico: ZEUS corre en un loop de tool-use donde él decide a
+   * quién consultar, puede re-consultar para resolver tensiones y puede
+   * buscar datos en la web antes de sintetizar.
+   */
+  @Post('agentic')
+  async orchestrateAgentic(@Body() dto: BriefDto): Promise<AgenticOrchestrationResult> {
+    return this.agentic.orchestrate(dto.brief);
+  }
+
+  /**
+   * POST /orchestrate/agentic/stream
+   * Versión SSE del modo agéntico: emite un evento `agent` por cada
+   * acción del loop (iteración, consulta, búsqueda web, comentario) y
+   * un evento `result` final.
+   */
+  @Post('agentic/stream')
+  async orchestrateAgenticStream(
+    @Body() dto: BriefDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const result = await this.agentic.orchestrate(dto.brief, (agentEvent) =>
+        send('agent', agentEvent),
+      );
+      send('result', result);
+    } catch (err) {
+      send('error', { message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      res.end();
+    }
+  }
+
+  /**
    * GET /orchestrate/runs
    * Lista las orquestaciones persistidas (id, fecha y brief truncado).
    */
@@ -79,7 +130,7 @@ export class OrchestratorController {
    * Devuelve una orquestación persistida completa.
    */
   @Get('runs/:id')
-  async getRun(@Param('id') id: string): Promise<OrchestrationResult> {
+  async getRun(@Param('id') id: string): Promise<PersistedRun> {
     const result = await this.store.get(id);
     if (!result) {
       throw new NotFoundException(`Orchestration ${id} not found`);

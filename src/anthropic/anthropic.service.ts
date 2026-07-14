@@ -17,6 +17,16 @@ export class AnthropicService {
     this.model = this.config.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
   }
 
+  /** Cliente crudo del SDK, para features que van más allá de complete() (ej. tool runner). */
+  get sdk(): Anthropic {
+    return this.client;
+  }
+
+  /** Modelo configurado para todos los agentes. */
+  get modelId(): string {
+    return this.model;
+  }
+
   /**
    * Llama al modelo con un system prompt y un mensaje de usuario.
    * Devuelve el texto plano de la respuesta.
