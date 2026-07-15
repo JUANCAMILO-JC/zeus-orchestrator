@@ -56,6 +56,7 @@ describe('AgenticOrchestratorService', () => {
   let anthropic: any;
   let atlas: { consult: jest.Mock };
   let hermes: { consult: jest.Mock };
+  let apolo: { consult: jest.Mock };
   let store: { save: jest.Mock };
   let service: AgenticOrchestratorService;
 
@@ -68,11 +69,13 @@ describe('AgenticOrchestratorService', () => {
     };
     atlas = { consult: jest.fn().mockResolvedValue('output de atlas') };
     hermes = { consult: jest.fn().mockResolvedValue('output de hermes') };
+    apolo = { consult: jest.fn().mockResolvedValue('output de apolo') };
     store = { save: jest.fn().mockResolvedValue(undefined) };
     service = new AgenticOrchestratorService(
       anthropic,
       atlas as never,
       hermes as never,
+      apolo as never,
       store as never,
     );
   });
@@ -95,7 +98,7 @@ describe('AgenticOrchestratorService', () => {
     expect(store.save).toHaveBeenCalledTimes(1);
   });
 
-  it('configura el runner con las 3 tools y el modelo correcto', async () => {
+  it('configura el runner con las 4 tools y el modelo correcto', async () => {
     toolRunnerMock.mockReturnValue(
       makeFakeRunner([makeMessage([{ type: 'text', text: 'ok' }])]),
     );
@@ -106,7 +109,7 @@ describe('AgenticOrchestratorService', () => {
     expect(params.model).toBe('claude-test');
     expect(params.max_iterations).toBe(8);
     const toolNames = params.tools.map((t: any) => t.name);
-    expect(toolNames).toEqual(['consult_atlas', 'consult_hermes', 'web_search']);
+    expect(toolNames).toEqual(['consult_atlas', 'consult_hermes', 'consult_apolo', 'web_search']);
   });
 
   it('las tools de arquitecto ejecutan la consulta y la registran', async () => {
@@ -126,6 +129,19 @@ describe('AgenticOrchestratorService', () => {
     expect(atlas.consult).toHaveBeenCalledWith('query autocontenida');
     expect(events.some((e) => e.type === 'tool_call' && e.tool === 'consult_atlas')).toBe(true);
     expect(events.some((e) => e.type === 'tool_result' && e.tool === 'consult_atlas')).toBe(true);
+  });
+
+  it('la tool de apolo consulta al arquitecto de marketing', async () => {
+    toolRunnerMock.mockReturnValue(
+      makeFakeRunner([makeMessage([{ type: 'text', text: 'ok' }])]),
+    );
+
+    await service.orchestrate('brief');
+    const apoloTool = toolRunnerMock.mock.calls[0][0].tools[2];
+    const output = await apoloTool.run({ query: 'query de marketing' });
+
+    expect(output).toBe('output de apolo');
+    expect(apolo.consult).toHaveBeenCalledWith('query de marketing');
   });
 
   it('si un arquitecto falla, la tool devuelve el error como texto para que ZEUS se adapte', async () => {

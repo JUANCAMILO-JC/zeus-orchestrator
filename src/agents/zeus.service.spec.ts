@@ -3,8 +3,12 @@ import { ZeusService, validateDecomposition } from './zeus.service';
 describe('validateDecomposition', () => {
   const valid = {
     analysis: 'núcleo del problema',
-    dimensions: { technical: ['a'], business: ['b'] },
-    queries: { atlas: 'pregunta técnica', hermes: 'pregunta de negocio' },
+    dimensions: { technical: ['a'], business: ['b'], marketing: ['c'] },
+    queries: {
+      atlas: 'pregunta técnica',
+      hermes: 'pregunta de negocio',
+      apolo: 'pregunta de marketing',
+    },
   };
 
   it('acepta una decomposición válida', () => {
@@ -13,7 +17,10 @@ describe('validateDecomposition', () => {
 
   it('acepta queries null individuales', () => {
     expect(
-      validateDecomposition({ ...valid, queries: { atlas: 'q', hermes: null } }),
+      validateDecomposition({
+        ...valid,
+        queries: { atlas: 'q', hermes: null, apolo: null },
+      }),
     ).toBeNull();
   });
 
@@ -32,13 +39,16 @@ describe('validateDecomposition', () => {
 
   it('rechaza queries con tipo incorrecto', () => {
     expect(
-      validateDecomposition({ ...valid, queries: { atlas: 42, hermes: 'q' } }),
+      validateDecomposition({ ...valid, queries: { atlas: 42, hermes: 'q', apolo: null } }),
     ).toMatch(/queries.atlas/);
   });
 
-  it('rechaza si ambas queries son null', () => {
+  it('rechaza si todas las queries son null', () => {
     expect(
-      validateDecomposition({ ...valid, queries: { atlas: null, hermes: null } }),
+      validateDecomposition({
+        ...valid,
+        queries: { atlas: null, hermes: null, apolo: null },
+      }),
     ).toMatch(/al menos un arquitecto/);
   });
 });
@@ -55,8 +65,8 @@ describe('ZeusService.decompose', () => {
 
     const result = await service.decompose('brief');
 
-    expect(result.dimensions).toEqual({ technical: [], business: [] });
-    expect(result.queries).toEqual({ atlas: 'q', hermes: null });
+    expect(result.dimensions).toEqual({ technical: [], business: [], marketing: [] });
+    expect(result.queries).toEqual({ atlas: 'q', hermes: null, apolo: null });
     expect(anthropic.completeJson).toHaveBeenCalledWith(
       expect.objectContaining({ validate: validateDecomposition }),
     );

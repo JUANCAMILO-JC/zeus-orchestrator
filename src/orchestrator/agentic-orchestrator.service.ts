@@ -3,6 +3,7 @@ import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema';
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { AnthropicService } from '../anthropic/anthropic.service';
+import { ApoloService } from '../agents/apolo.service';
 import { AtlasService } from '../agents/atlas.service';
 import { HermesService } from '../agents/hermes.service';
 import { ZEUS_AGENTIC_PROMPT } from '../agents/zeus.prompt';
@@ -78,6 +79,7 @@ export class AgenticOrchestratorService {
     private readonly anthropic: AnthropicService,
     private readonly atlas: AtlasService,
     private readonly hermes: HermesService,
+    private readonly apolo: ApoloService,
     private readonly store: OrchestrationStoreService,
   ) {}
 
@@ -197,6 +199,11 @@ export class AgenticOrchestratorService {
       'Consulta a HERMES, arquitecto de negocios. Úsalo para modelo de negocio, pricing, mercado, go-to-market y riesgos comerciales. Es ciego ante la complejidad técnica real.',
       this.hermes,
     );
+    const consultApolo = makeArchitectTool(
+      'consult_apolo',
+      'Consulta a APOLO, arquitecto de publicidad y marketing. Úsalo para marca, posicionamiento, canales de adquisición, funnels, campañas y métricas de marketing. Es ciego ante la complejidad técnica y los unit economics profundos.',
+      this.apolo,
+    );
 
     const runner = this.anthropic.sdk.beta.messages.toolRunner({
       model: this.anthropic.modelId,
@@ -207,6 +214,7 @@ export class AgenticOrchestratorService {
       tools: [
         consultAtlas,
         consultHermes,
+        consultApolo,
         { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
       ],
       max_iterations: MAX_ITERATIONS,

@@ -10,10 +10,12 @@ export interface DecompositionResult {
   dimensions: {
     technical: string[];
     business: string[];
+    marketing: string[];
   };
   queries: {
     atlas: string | null;
     hermes: string | null;
+    apolo: string | null;
   };
 }
 
@@ -32,14 +34,14 @@ export function validateDecomposition(value: unknown): string | null {
   if (!v.queries || typeof v.queries !== 'object') {
     return 'falta el campo "queries" (objeto)';
   }
-  for (const key of ['atlas', 'hermes'] as const) {
+  for (const key of ['atlas', 'hermes', 'apolo'] as const) {
     const q = v.queries[key];
     if (q !== null && q !== undefined && typeof q !== 'string') {
       return `"queries.${key}" debe ser string o null`;
     }
   }
-  if (v.queries.atlas == null && v.queries.hermes == null) {
-    return 'ambas queries son null — al menos un arquitecto debe ser consultado';
+  if (v.queries.atlas == null && v.queries.hermes == null && v.queries.apolo == null) {
+    return 'todas las queries son null — al menos un arquitecto debe ser consultado';
   }
   return null;
 }
@@ -67,10 +69,12 @@ export class ZeusService {
       dimensions: {
         technical: result.dimensions?.technical ?? [],
         business: result.dimensions?.business ?? [],
+        marketing: result.dimensions?.marketing ?? [],
       },
       queries: {
         atlas: result.queries.atlas ?? null,
         hermes: result.queries.hermes ?? null,
+        apolo: result.queries.apolo ?? null,
       },
     };
   }
@@ -82,8 +86,9 @@ export class ZeusService {
     brief: string;
     atlasOutput: string | null;
     hermesOutput: string | null;
+    apoloOutput: string | null;
   }): Promise<string> {
-    const { brief, atlasOutput, hermesOutput } = params;
+    const { brief, atlasOutput, hermesOutput, apoloOutput } = params;
 
     const userMessage = [
       '## BRIEF ORIGINAL',
@@ -94,6 +99,9 @@ export class ZeusService {
       '',
       '## RESPUESTA DE HERMES (negocio)',
       hermesOutput || '[HERMES no fue consultado para este brief]',
+      '',
+      '## RESPUESTA DE APOLO (marketing)',
+      apoloOutput || '[APOLO no fue consultado para este brief]',
       '',
       '## TU TAREA',
       'Sintetiza estas perspectivas siguiendo el formato definido en tu system prompt.',

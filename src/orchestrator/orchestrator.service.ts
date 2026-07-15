@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
+import { ApoloService } from '../agents/apolo.service';
 import { AtlasService } from '../agents/atlas.service';
 import { HermesService } from '../agents/hermes.service';
 import { ZeusService, DecompositionResult } from '../agents/zeus.service';
@@ -12,8 +13,9 @@ export interface OrchestrationResult {
   decomposition: DecompositionResult;
   atlasOutput: string | null;
   hermesOutput: string | null;
+  apoloOutput: string | null;
   /** Errores no fatales: un arquitecto falló pero la síntesis continuó sin él. */
-  errors: { atlas?: string; hermes?: string } | null;
+  errors: { atlas?: string; hermes?: string; apolo?: string } | null;
   synthesis: string;
   fromCache: boolean;
   metrics: {
@@ -25,7 +27,7 @@ export interface OrchestrationResult {
 }
 
 export interface PhaseEvent {
-  phase: 'decomposition' | 'atlas' | 'hermes' | 'synthesis';
+  phase: 'decomposition' | 'atlas' | 'hermes' | 'apolo' | 'synthesis';
   status: 'start' | 'complete' | 'skipped' | 'error';
   elapsedMs?: number;
   error?: string;
@@ -43,6 +45,7 @@ export class OrchestratorService {
     private readonly zeus: ZeusService,
     private readonly atlas: AtlasService,
     private readonly hermes: HermesService,
+    private readonly apolo: ApoloService,
     private readonly store: OrchestrationStoreService,
   ) {}
 
@@ -80,15 +83,16 @@ export class OrchestratorService {
     this.logger.log(
       `Phase 1 (decomposition) done in ${decompositionMs}ms · ` +
       `Atlas needed: ${!!decomposition.queries.atlas} · ` +
-      `Hermes needed: ${!!decomposition.queries.hermes}`,
+      `Hermes needed: ${!!decomposition.queries.hermes} · ` +
+      `Apolo needed: ${!!decomposition.queries.apolo}`,
     );
 
     // FASE 2 — Arquitectos en paralelo, con degradación si alguno falla.
     const tParallelStart = Date.now();
-    const errors: { atlas?: string; hermes?: string } = {};
+    const errors: { atlas?: string; hermes?: string; apolo?: string } = {};
 
     const consult = async (
-      name: 'atlas' | 'hermes',
+      name: 'atlas' | 'hermes' | 'apolo',
       query: string | null,
       agent: { consult(q: string): Promise<string> },
     ): Promise<string | null> => {
@@ -111,24 +115,31 @@ export class OrchestratorService {
       }
     };
 
-    const [atlasOutput, hermesOutput] = await Promise.all([
+    const [atlasOutput, hermesOutput, apoloOutput] = await Promise.all([
       consult('atlas', decomposition.queries.atlas, this.atlas),
       consult('hermes', decomposition.queries.hermes, this.hermes),
+      consult('apolo', decomposition.queries.apolo, this.apolo),
     ]);
     const parallelExecutionMs = Date.now() - tParallelStart;
     this.logger.log(`Phase 2 (parallel architects) done in ${parallelExecutionMs}ms`);
 
-    if (atlasOutput === null && hermesOutput === null && (errors.atlas || errors.hermes)) {
-      // Ambos arquitectos requeridos fallaron: no hay nada que sintetizar.
+    if (
+      atlasOutput === null &&
+      hermesOutput === null &&
+      apoloOutput === null &&
+      (errors.atlas || errors.hermes || errors.apolo)
+    ) {
+      // Todos los arquitectos requeridos fallaron: no hay nada que sintetizar.
       throw new Error(
-        `All consulted architects failed (atlas: ${errors.atlas ?? 'n/a'}, hermes: ${errors.hermes ?? 'n/a'})`,
+        `All consulted architects failed (atlas: ${errors.atlas ?? 'n/a'}, ` +
+        `hermes: ${errors.hermes ?? 'n/a'}, apolo: ${errors.apolo ?? 'n/a'})`,
       );
     }
 
     // FASE 3 — Síntesis
     emit({ phase: 'synthesis', status: 'start' });
     const tSynthStart = Date.now();
-    const synthesis = await this.zeus.synthesize({ brief, atlasOutput, hermesOutput });
+    const synthesis = await this.zeus.synthesize({ brief, atlasOutput, hermesOutput, apoloOutput });
     const synthesisMs = Date.now() - tSynthStart;
     emit({ phase: 'synthesis', status: 'complete', elapsedMs: synthesisMs });
     this.logger.log(`Phase 3 (synthesis) done in ${synthesisMs}ms`);
@@ -143,6 +154,7 @@ export class OrchestratorService {
       decomposition,
       atlasOutput,
       hermesOutput,
+      apoloOutput,
       errors: Object.keys(errors).length > 0 ? errors : null,
       synthesis,
       fromCache: false,

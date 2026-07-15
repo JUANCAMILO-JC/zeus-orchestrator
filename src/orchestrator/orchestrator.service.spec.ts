@@ -3,14 +3,15 @@ import { DecompositionResult } from '../agents/zeus.service';
 
 describe('OrchestratorService', () => {
   const decomposition: DecompositionResult = {
-    analysis: 'Un problema de stack y de pricing',
-    dimensions: { technical: ['stack'], business: ['pricing'] },
-    queries: { atlas: 'query técnica', hermes: 'query de negocio' },
+    analysis: 'Un problema de stack, de pricing y de adquisición',
+    dimensions: { technical: ['stack'], business: ['pricing'], marketing: ['adquisición'] },
+    queries: { atlas: 'query técnica', hermes: 'query de negocio', apolo: 'query de marketing' },
   };
 
   let zeus: { decompose: jest.Mock; synthesize: jest.Mock };
   let atlas: { consult: jest.Mock };
   let hermes: { consult: jest.Mock };
+  let apolo: { consult: jest.Mock };
   let store: { save: jest.Mock };
   let service: OrchestratorService;
 
@@ -21,11 +22,13 @@ describe('OrchestratorService', () => {
     };
     atlas = { consult: jest.fn().mockResolvedValue('output de atlas') };
     hermes = { consult: jest.fn().mockResolvedValue('output de hermes') };
+    apolo = { consult: jest.fn().mockResolvedValue('output de apolo') };
     store = { save: jest.fn().mockResolvedValue(undefined) };
     service = new OrchestratorService(
       zeus as never,
       atlas as never,
       hermes as never,
+      apolo as never,
       store as never,
     );
   });
@@ -35,10 +38,12 @@ describe('OrchestratorService', () => {
 
     expect(atlas.consult).toHaveBeenCalledWith('query técnica');
     expect(hermes.consult).toHaveBeenCalledWith('query de negocio');
+    expect(apolo.consult).toHaveBeenCalledWith('query de marketing');
     expect(zeus.synthesize).toHaveBeenCalledWith({
       brief: 'un brief cualquiera',
       atlasOutput: 'output de atlas',
       hermesOutput: 'output de hermes',
+      apoloOutput: 'output de apolo',
     });
     expect(result.synthesis).toBe('síntesis final');
     expect(result.errors).toBeNull();
@@ -63,6 +68,7 @@ describe('OrchestratorService', () => {
   it('si todos los arquitectos consultados fallan, lanza error', async () => {
     atlas.consult.mockRejectedValue(new Error('boom atlas'));
     hermes.consult.mockRejectedValue(new Error('boom hermes'));
+    apolo.consult.mockRejectedValue(new Error('boom apolo'));
 
     await expect(service.orchestrate('brief condenado')).rejects.toThrow(
       /All consulted architects failed/,
@@ -73,13 +79,15 @@ describe('OrchestratorService', () => {
   it('omite a un arquitecto cuando su query es null', async () => {
     zeus.decompose.mockResolvedValue({
       ...decomposition,
-      queries: { atlas: 'query técnica', hermes: null },
+      queries: { atlas: 'query técnica', hermes: null, apolo: null },
     });
 
     const result = await service.orchestrate('brief puramente técnico');
 
     expect(hermes.consult).not.toHaveBeenCalled();
+    expect(apolo.consult).not.toHaveBeenCalled();
     expect(result.hermesOutput).toBeNull();
+    expect(result.apoloOutput).toBeNull();
     expect(result.errors).toBeNull();
   });
 
@@ -112,6 +120,7 @@ describe('OrchestratorService', () => {
     expect(sequence[1]).toBe('decomposition:complete');
     expect(sequence).toContain('atlas:complete');
     expect(sequence).toContain('hermes:complete');
+    expect(sequence).toContain('apolo:complete');
     expect(sequence[sequence.length - 1]).toBe('synthesis:complete');
   });
 
