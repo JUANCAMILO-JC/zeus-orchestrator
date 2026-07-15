@@ -7,30 +7,42 @@ interface FakeMessage {
   content: any[];
   stop_reason: string;
   usage: { input_tokens: number; output_tokens: number };
+  container?: { id: string } | null;
 }
 
 function makeMessage(
   content: any[],
   stopReason = 'end_turn',
   usage = { input_tokens: 100, output_tokens: 50 },
+  container: { id: string } | null = null,
 ): FakeMessage {
-  return { content, stop_reason: stopReason, usage };
+  return { content, stop_reason: stopReason, usage, container };
 }
 
 /**
- * Runner falso: itera los mensajes dados, registra pushMessages y expone
- * `.params.messages` como el runner real (historial acumulado que el
- * servicio persiste para continuar la conversación en otro turno).
+ * Runner falso: itera los mensajes dados, registra pushMessages y
+ * setMessagesParams, y expone `.params.messages` como el runner real
+ * (historial acumulado que el servicio persiste para continuar la
+ * conversación en otro turno).
  */
 function makeFakeRunner(
   messages: FakeMessage[],
   finalHistory: any[] = [{ role: 'assistant', content: 'historial-simulado' }],
 ) {
   const pushed: any[] = [];
+  const setParamsCalls: any[] = [];
+  const params: any = { messages: finalHistory };
   return {
     pushed,
+    setParamsCalls,
+    params,
     pushMessages: (...msgs: any[]) => pushed.push(...msgs),
-    params: { messages: finalHistory },
+    setMessagesParams: (paramsOrMutator: any) => {
+      const next =
+        typeof paramsOrMutator === 'function' ? paramsOrMutator(params) : paramsOrMutator;
+      Object.assign(params, next);
+      setParamsCalls.push(next);
+    },
     async *[Symbol.asyncIterator]() {
       for (const m of messages) {
         yield m;
@@ -51,6 +63,7 @@ describe('AgenticOrchestratorService', () => {
     toolRunnerMock = jest.fn();
     anthropic = {
       modelId: 'claude-test',
+      compactionTriggerTokens: 150_000,
       sdk: { beta: { messages: { toolRunner: toolRunnerMock } } },
     };
     atlas = { consult: jest.fn().mockResolvedValue('output de atlas') };
@@ -169,5 +182,127 @@ describe('AgenticOrchestratorService', () => {
 
     expect(events.filter((e) => e.type === 'iteration')).toHaveLength(2);
     expect(events.some((e) => e.type === 'commentary' && e.text === 'voy a consultar a ambos')).toBe(true);
+  });
+
+  describe('compactación de contexto', () => {
+    it('configura el runner con la beta y el context_management correctos', async () => {
+      toolRunnerMock.mockReturnValue(
+        makeFakeRunner([makeMessage([{ type: 'text', text: 'ok' }])]),
+      );
+
+      await service.orchestrate('brief');
+
+      const params = toolRunnerMock.mock.calls[0][0];
+      expect(params.betas).toEqual(['compact-2026-01-12']);
+      expect(params.context_management).toEqual({
+        edits: [
+          {
+            type: 'compact_20260112',
+            pause_after_compaction: false,
+            trigger: { type: 'input_tokens', value: 150_000 },
+            instructions: expect.any(String),
+          },
+        ],
+      });
+    });
+
+    it('usa el umbral configurado en AnthropicService.compactionTriggerTokens', async () => {
+      anthropic.compactionTriggerTokens = 5_000;
+      toolRunnerMock.mockReturnValue(
+        makeFakeRunner([makeMessage([{ type: 'text', text: 'ok' }])]),
+      );
+
+      await service.orchestrate('brief');
+
+      const params = toolRunnerMock.mock.calls[0][0];
+      expect(params.context_management.edits[0].trigger).toEqual({
+        type: 'input_tokens',
+        value: 5_000,
+      });
+    });
+
+    it('emite un evento compaction cuando el mensaje trae un bloque de compactación exitoso', async () => {
+      toolRunnerMock.mockReturnValue(
+        makeFakeRunner([
+          makeMessage([
+            { type: 'compaction', content: 'resumen de lo compactado', encrypted_content: 'meta' },
+            { type: 'text', text: 'síntesis' },
+          ]),
+        ]),
+      );
+      const events: AgenticEvent[] = [];
+
+      await service.orchestrate('brief', (e) => events.push(e));
+
+      expect(events).toContainEqual({ type: 'compaction', iteration: 1, succeeded: true });
+    });
+
+    it('emite succeeded:false si la compactación falló (content null)', async () => {
+      toolRunnerMock.mockReturnValue(
+        makeFakeRunner([
+          makeMessage([
+            { type: 'compaction', content: null, encrypted_content: null },
+            { type: 'text', text: 'síntesis' },
+          ]),
+        ]),
+      );
+      const events: AgenticEvent[] = [];
+
+      await service.orchestrate('brief', (e) => events.push(e));
+
+      expect(events).toContainEqual({ type: 'compaction', iteration: 1, succeeded: false });
+    });
+
+    it('reanuda el loop si el servidor pausa con stop_reason compaction', async () => {
+      const paused = makeMessage(
+        [{ type: 'compaction', content: 'resumen parcial', encrypted_content: 'meta' }],
+        'compaction',
+      );
+      const runner = makeFakeRunner([paused, makeMessage([{ type: 'text', text: 'fin' }])]);
+      toolRunnerMock.mockReturnValue(runner);
+
+      const result = await service.orchestrate('brief');
+
+      expect(runner.pushed).toEqual([{ role: 'assistant', content: paused.content }]);
+      expect(result.synthesis).toBe('fin');
+    });
+  });
+
+  describe('container de web_search con filtrado dinámico', () => {
+    // Reproduce el bug real encontrado en pruebas en vivo: cuando
+    // web_search deja trabajo pendiente en su container de ejecución de
+    // código, la siguiente request interna del tool runner debe reenviar
+    // ese container id o la API responde 400
+    // ("container_id is required when there are pending tool uses...").
+    it('reenvía el container id en la siguiente llamada interna cuando el mensaje lo trae', async () => {
+      const withPendingContainer = makeMessage(
+        [{ type: 'server_tool_use', name: 'web_search', input: { query: 'precios competidores' } }],
+        'tool_use',
+        { input_tokens: 100, output_tokens: 50 },
+        { id: 'container_abc123' },
+      );
+      const runner = makeFakeRunner([
+        withPendingContainer,
+        makeMessage([{ type: 'text', text: 'síntesis' }]),
+      ]);
+      toolRunnerMock.mockReturnValue(runner);
+
+      await service.orchestrate('brief');
+
+      expect(runner.setParamsCalls).toHaveLength(1);
+      expect(runner.setParamsCalls[0]).toMatchObject({ container: 'container_abc123' });
+      expect(runner.params.container).toBe('container_abc123');
+    });
+
+    it('no llama a setMessagesParams si el mensaje no trae container', async () => {
+      toolRunnerMock.mockReturnValue(
+        makeFakeRunner([makeMessage([{ type: 'text', text: 'ok' }])]),
+      );
+
+      await service.orchestrate('brief');
+
+      const runner = toolRunnerMock.mock.results[0].value;
+      expect(runner.setParamsCalls).toEqual([]);
+    });
   });
 });

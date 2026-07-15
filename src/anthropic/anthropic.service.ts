@@ -28,6 +28,25 @@ export class AnthropicService {
   }
 
   /**
+   * Umbral de input tokens a partir del cual el servidor compacta
+   * automáticamente el historial de una conversación larga (ver
+   * `context_management` en AgenticOrchestratorService). Configurable vía
+   * COMPACTION_TRIGGER_TOKENS para pruebas o tuning; por defecto coincide
+   * con el default de la API (150k). La API rechaza valores por debajo de
+   * 50k (`trigger.value must be at least 50000`), así que un valor
+   * inválido o demasiado bajo cae a ese piso en vez de tumbar la request.
+   */
+  get compactionTriggerTokens(): number {
+    const MIN_TRIGGER_TOKENS = 50_000;
+    const raw = this.config.get<string>('COMPACTION_TRIGGER_TOKENS');
+    const parsed = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 150_000;
+    }
+    return Math.max(parsed, MIN_TRIGGER_TOKENS);
+  }
+
+  /**
    * Llama al modelo con un system prompt y un mensaje de usuario.
    * Devuelve el texto plano de la respuesta.
    */

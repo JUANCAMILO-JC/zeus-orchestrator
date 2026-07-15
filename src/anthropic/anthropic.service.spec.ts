@@ -42,6 +42,33 @@ describe('AnthropicService', () => {
     );
   });
 
+  describe('compactionTriggerTokens', () => {
+    it('usa 150k por defecto si no está configurado', () => {
+      expect(service.compactionTriggerTokens).toBe(150_000);
+    });
+
+    it('usa el valor configurado si es válido y cumple el mínimo de la API', () => {
+      const s = new AnthropicService(
+        makeConfig({ ANTHROPIC_API_KEY: 'k', COMPACTION_TRIGGER_TOKENS: '80000' }),
+      );
+      expect(s.compactionTriggerTokens).toBe(80_000);
+    });
+
+    it('sube al piso de 50k si el valor configurado está por debajo (la API lo rechaza)', () => {
+      const s = new AnthropicService(
+        makeConfig({ ANTHROPIC_API_KEY: 'k', COMPACTION_TRIGGER_TOKENS: '3000' }),
+      );
+      expect(s.compactionTriggerTokens).toBe(50_000);
+    });
+
+    it('ignora valores no numéricos y usa el default', () => {
+      const s = new AnthropicService(
+        makeConfig({ ANTHROPIC_API_KEY: 'k', COMPACTION_TRIGGER_TOKENS: 'no-es-un-numero' }),
+      );
+      expect(s.compactionTriggerTokens).toBe(150_000);
+    });
+  });
+
   describe('complete', () => {
     it('devuelve el texto de la respuesta', async () => {
       mockCreate.mockResolvedValue(makeResponse('hola'));

@@ -22,13 +22,16 @@ export interface AgenticEvent {
     | 'tool_call'
     | 'tool_result'
     | 'tool_error'
-    | 'web_search';
+    | 'web_search'
+    | 'compaction';
   iteration?: number;
   tool?: string;
   query?: string;
   text?: string;
   elapsedMs?: number;
   error?: string;
+  /** Solo en eventos `compaction`: false si el servidor no logró producir un resumen válido. */
+  succeeded?: boolean;
 }
 
 export type AgenticListener = (event: AgenticEvent) => void;
@@ -207,6 +210,25 @@ export class AgenticOrchestratorService {
         { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
       ],
       max_iterations: MAX_ITERATIONS,
+      // Compactación server-side: en sesiones largas, el historial que se
+      // reenvía en cada turno puede acercarse al límite de contexto. El
+      // servidor resume automáticamente lo más antiguo antes de ese punto;
+      // el bloque de compactación viaja dentro de la respuesta y el tool
+      // runner ya lo persiste al acumular messages (ver runner.params.messages).
+      betas: ['compact-2026-01-12'],
+      context_management: {
+        edits: [
+          {
+            type: 'compact_20260112',
+            pause_after_compaction: false,
+            trigger: { type: 'input_tokens', value: this.anthropic.compactionTriggerTokens },
+            instructions:
+              'Conserva en el resumen las cifras concretas (presupuestos, precios, costos), las ' +
+              'decisiones técnicas y de negocio tomadas, y qué arquitecto dijo qué — el usuario ' +
+              'puede referirse a estos detalles en preguntas de seguimiento.',
+          },
+        ],
+      },
     });
 
     let iterations = 0;
@@ -231,12 +253,31 @@ export class AgenticOrchestratorService {
           const query = (block.input as { query?: string })?.query ?? '';
           consultations.push({ tool: 'web_search', query, elapsedMs: 0 });
           emit({ type: 'web_search', iteration: iterations, query });
+        } else if (block.type === 'compaction') {
+          const succeeded = block.content !== null;
+          this.logger.log(
+            `Context compacted at iteration ${iterations} (${succeeded ? 'ok' : 'failed — treated as no-op'})`,
+          );
+          emit({ type: 'compaction', iteration: iterations, succeeded });
         }
       }
 
-      // El tool runner no reanuda pause_turn solo (loop server-side de
-      // web_search): hay que devolver el turno del asistente para continuar.
-      if (message.stop_reason === 'pause_turn') {
+      // web_search con filtrado dinámico corre código server-side en un
+      // container propio. Si queda trabajo pendiente en ese container al
+      // terminar esta iteración, la siguiente request debe reenviar su id
+      // o la API responde 400 ("container_id is required..."). El tool
+      // runner no hace este seguimiento por su cuenta — hay que setearlo
+      // nosotros para que la próxima llamada interna lo incluya.
+      if (message.container?.id) {
+        runner.setMessagesParams((prev) => ({ ...prev, container: message.container!.id }));
+      }
+
+      // El tool runner no reanuda solo dos casos: pause_turn (loop
+      // server-side de web_search) y, por defensividad, compaction — con
+      // pause_after_compaction:false no debería ocurrir, pero si el
+      // servidor decide pausar igual, hay que devolver el turno del
+      // asistente para continuar en vez de terminar sin síntesis.
+      if (message.stop_reason === 'pause_turn' || message.stop_reason === 'compaction') {
         runner.pushMessages({ role: 'assistant', content: message.content });
         continue;
       }
