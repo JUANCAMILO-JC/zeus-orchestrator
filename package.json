@@ -1,12 +1,13 @@
 {
   "name": "zeus-orchestrator",
   "version": "0.1.0",
-  "description": "Orquestador de arquitectos AI - ZEUS coordina ATLAS y HERMES",
+  "description": "Orquestador de arquitectos AI - ZEUS coordina ATLAS, HERMES y APOLO",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
+    "zeus": "node zeus.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:watch": "jest --watch"

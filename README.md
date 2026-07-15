@@ -1,8 +1,8 @@
 # ZEUS Orchestrator
 
 Orquestador en NestJS del Consejo de Arquitectos AI. ZEUS coordina a ATLAS
-(arquitectura técnica) y HERMES (estrategia de negocio) para producir
-respuestas integradas a partir de un brief.
+(arquitectura técnica), HERMES (estrategia de negocio) y APOLO (publicidad
+y marketing) para producir respuestas integradas a partir de un brief.
 
 Tiene tres modos:
 
@@ -32,16 +32,16 @@ POST /orchestrate
 └─────────────────────────────────┘
               │
               ▼
-┌──────────────┴──────────────┐
-│   FASE 2 — PARALELO          │
-│   ATLAS  ◄──┐    ┌──► HERMES │
-│   (técnico) │    │ (negocio) │
-└─────────────┴────┴──────────┘
+┌─────────────────┴─────────────────────┐
+│   FASE 2 — PARALELO                    │
+│   ATLAS   ◄──┬──►  HERMES  ◄──► APOLO  │
+│   (técnico)  │   (negocio)  (marketing)│
+└──────────────┴────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────┐
 │  FASE 3 — SÍNTESIS              │
-│  ZEUS integra ambas perspectivas│
+│  ZEUS integra las perspectivas  │
 │  detecta tensiones, decide      │
 └─────────────────────────────────┘
               │
@@ -68,6 +68,29 @@ npm run start:dev
 El servidor arranca en `http://localhost:3000`.
 
 ## Uso
+
+### CLI de chat (la forma recomendada de trabajar con Zeus)
+
+Con el server corriendo (`npm run start:dev`), en otra terminal:
+
+```bash
+npm run zeus
+```
+
+Abre un chat interactivo contra los endpoints de sesiones multi-turno:
+escribes el brief (Enter dos veces envía), ves en vivo a quién consulta
+ZEUS (ATLAS/HERMES/APOLO, búsquedas web) y recibes la síntesis formateada.
+La conversación continúa en la misma sesión, persistida en `data/sessions/`.
+
+Comandos dentro del chat: `/sesiones`, `/cargar <id>`, `/nueva`, `/id`,
+`/ayuda`, `/salir`. Flags útiles:
+
+```bash
+node zeus.js --list                        # lista sesiones y sale
+node zeus.js --resume <id>                 # retoma una sesión
+node zeus.js --brief "..."                 # one-shot: un turno y sale
+ZEUS_URL=http://otro-host:3000 node zeus.js  # server remoto
+```
 
 ### Health check
 
@@ -115,9 +138,9 @@ curl -N -X POST http://localhost:3000/orchestrate/agentic/stream \
   -d '{"brief": "..."}'
 ```
 
-En este modo ZEUS dirige el loop con tres herramientas:
+En este modo ZEUS dirige el loop con cuatro herramientas:
 
-- `consult_atlas` / `consult_hermes` — los arquitectos como tools; ZEUS
+- `consult_atlas` / `consult_hermes` / `consult_apolo` — los arquitectos como tools; ZEUS
   redacta queries autocontenidas y puede re-consultar si detecta
   tensiones entre las perspectivas.
 - `web_search` — búsqueda web server-side de Anthropic para fundamentar
@@ -159,7 +182,7 @@ curl http://localhost:3000/sessions/<session-id>   # sesión completa (historial
 ```
 
 Cada turno reutiliza el mismo loop agéntico (`consult_atlas`,
-`consult_hermes`, `web_search`): ZEUS ve todo el historial previo y
+`consult_hermes`, `consult_apolo`, `web_search`): ZEUS ve todo el historial previo y
 decide si la pregunta de seguimiento requiere volver a consultar a un
 arquitecto (por ejemplo, si el usuario cambia el presupuesto o el
 alcance) o si puede responder directamente con lo ya discutido. La
@@ -169,8 +192,9 @@ nueva.
 
 Cada sesión se persiste en `data/sessions/<id>.json` con el historial
 completo (formato API, para continuar la conversación) y un log legible
-de turnos. No hay compactación de contexto todavía — en conversaciones
-muy largas el historial crece sin límite (ver "Próximos pasos").
+de turnos. En conversaciones largas el servidor compacta automáticamente
+lo más antiguo del historial (context management server-side) antes de
+acercarse al límite de contexto del modelo.
 
 ### Auditoría de orquestaciones
 
@@ -201,6 +225,8 @@ node test-brief.js
 ```
 src/
 ├── agents/                    # Los arquitectos del consejo
+│   ├── apolo.prompt.ts        # System prompt de APOLO
+│   ├── apolo.service.ts       # Servicio que invoca a APOLO
 │   ├── atlas.prompt.ts        # System prompt de ATLAS
 │   ├── atlas.service.ts       # Servicio que invoca a ATLAS
 │   ├── hermes.prompt.ts       # System prompt de HERMES
@@ -257,10 +283,21 @@ todos los outputs anteriores como input.
       re-consultar a un arquitecto exponiéndole la objeción del otro
 - [x] Sesiones multi-turno: conversación persistida con el consejo
       (`POST /sessions`), ZEUS decide por turno si re-consultar
-- [ ] Más arquitectos: HEFESTO (datos), TEMIS (legal), APOLO (producto)
+- [x] APOLO (publicidad y marketing): tercer arquitecto del consejo,
+      integrado en el pipeline y como tool del modo agéntico
+- [x] Compactación de contexto en sesiones largas: el servidor resume
+      automáticamente lo más antiguo del historial (context management
+      server-side) antes de llegar al límite de contexto
+- [x] CLI de chat (`npm run zeus`): la interfaz diaria para trabajar con
+      el consejo — sesiones multi-turno, eventos del loop en vivo,
+      `--resume`/`--list`/`--brief` para scripting
+- [ ] Auth básica: los endpoints están abiertos y cada request gasta la
+      API key — requisito previo a cualquier despliegue fuera de localhost
+- [ ] Contenerización y deploy: Dockerfile (node alpine, volumen para
+      `data/`) + VPS o Railway/Fly.io, solo cuando haga falta acceso
+      remoto — después de la auth
+- [ ] Más arquitectos: HEFESTO (datos), TEMIS (legal), ARTEMIS (producto)
       — el modo agéntico los soporta como tool adicional sin tocar el loop
 - [ ] Streaming de tokens: hoy el SSE emite por acción/fase; el siguiente
       nivel es streamear los tokens del modelo dentro de cada turno
-- [ ] Compactación de contexto en sesiones largas: hoy el historial de
-      una sesión crece sin límite; falta compactar cuando se acerque al
-      límite de contexto del modelo
+- [ ] Web UI de chat: siguiente paso de interfaz si el CLI se queda corto
