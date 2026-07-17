@@ -67,9 +67,50 @@ npm run start:dev
 
 El servidor arranca en `http://localhost:3000`.
 
+### Auth
+
+Si defines `ZEUS_API_KEY` en el `.env`, todos los endpoints (salvo
+`/orchestrate/health`) exigen esa key en cada request, vía header
+`x-api-key: <key>` o `Authorization: Bearer <key>`. Sin la variable, el
+server queda abierto (solo aceptable en local; lo advierte en el log al
+arrancar). **Definirla es requisito antes de exponer el server fuera de
+localhost** — cada request consume tu API key de Anthropic.
+
+```bash
+# generar una key
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# usarla con curl
+curl -H "x-api-key: <key>" http://localhost:3000/sessions
+
+# el CLI la lee de la variable de entorno ZEUS_API_KEY
+```
+
 ## Uso
 
-### CLI de chat (la forma recomendada de trabajar con Zeus)
+### Web UI de chat
+
+Con el server corriendo, abre `http://localhost:3000` en el navegador.
+Es una página estática servida por el propio Nest (carpeta `public/`,
+sin dependencias ni build de frontend) sobre los endpoints de sesiones:
+
+- Editor de brief cómodo, con botón **Plantilla** que precarga la
+  estructura que los arquitectos necesitan (contexto, objetivo,
+  presupuesto, mercado, restricciones). Ctrl+Enter envía.
+- Streaming en vivo del loop agéntico: ves a quién consulta ZEUS
+  (ATLAS/HERMES/APOLO), búsquedas web y el comentario de cada iteración.
+- Síntesis renderizada como markdown (títulos, tablas, listas) con chips
+  de qué consultas se hicieron y cuánto tardó cada una.
+- Barra lateral con las sesiones guardadas: clic para retomar cualquier
+  conversación y seguir preguntando.
+- Si el server exige auth, el botón 🔑 guarda tu `ZEUS_API_KEY` en
+  localStorage y se envía en cada request.
+- Recuperación de turnos: si el stream SSE se corta (red, refresh, caída
+  del proceso), la UI verifica contra la API si el turno alcanzó a
+  persistirse y lo muestra en vez de declarar el fallo; solo reporta
+  error si el turno realmente se perdió.
+
+### CLI de chat (terminal)
 
 Con el server corriendo (`npm run start:dev`), en otra terminal:
 
@@ -223,6 +264,10 @@ node test-brief.js
 ## Estructura del proyecto
 
 ```
+public/                        # Web UI de chat (estática, sin build)
+├── index.html
+├── styles.css
+└── app.js                     # SSE + render markdown + sesiones
 src/
 ├── agents/                    # Los arquitectos del consejo
 │   ├── apolo.prompt.ts        # System prompt de APOLO
@@ -237,6 +282,9 @@ src/
 ├── anthropic/                 # Cliente de la API de Anthropic
 │   ├── anthropic.service.ts
 │   └── anthropic.module.ts
+├── auth/                      # Auth por API key (guard global)
+│   ├── api-key.guard.ts       # Exige ZEUS_API_KEY (x-api-key o Bearer)
+│   └── public.decorator.ts    # @Public() exime un endpoint (health)
 ├── orchestrator/              # El director de orquesta
 │   ├── brief.dto.ts                  # Validación del payload (brief)
 │   ├── message.dto.ts                # Validación del payload (mensaje de sesión)
@@ -291,13 +339,19 @@ todos los outputs anteriores como input.
 - [x] CLI de chat (`npm run zeus`): la interfaz diaria para trabajar con
       el consejo — sesiones multi-turno, eventos del loop en vivo,
       `--resume`/`--list`/`--brief` para scripting
-- [ ] Auth básica: los endpoints están abiertos y cada request gasta la
-      API key — requisito previo a cualquier despliegue fuera de localhost
+- [x] Auth básica: guard global de API key (`ZEUS_API_KEY`, header
+      `x-api-key` o Bearer) con health check público — requisito previo
+      a cualquier despliegue fuera de localhost
 - [ ] Contenerización y deploy: Dockerfile (node alpine, volumen para
       `data/`) + VPS o Railway/Fly.io, solo cuando haga falta acceso
-      remoto — después de la auth
+      remoto
 - [ ] Más arquitectos: HEFESTO (datos), TEMIS (legal), ARTEMIS (producto)
       — el modo agéntico los soporta como tool adicional sin tocar el loop
 - [ ] Streaming de tokens: hoy el SSE emite por acción/fase; el siguiente
       nivel es streamear los tokens del modelo dentro de cada turno
-- [ ] Web UI de chat: siguiente paso de interfaz si el CLI se queda corto
+- [x] Web UI de chat: página estática servida por Nest en `/` — editor
+      de brief con plantilla, streaming en vivo del loop y sesiones
+      retomables desde el navegador
+- [ ] Refinador de brief: paso opcional que revisa el brief antes de
+      enviarlo a ZEUS, señala vacíos (presupuesto, plazo, mercado) y
+      propone una versión mejorada con aprobación del usuario

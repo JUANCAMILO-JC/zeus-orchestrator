@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZEUS — Consejo de Arquitectos AI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="side-head">
+      <button id="btn-new" class="btn btn-primary">+ Nueva sesión</button>
+    </div>
+    <nav id="session-list" aria-label="Sesiones guardadas"></nav>
+  </aside>
+
+  <main>
+    <header>
+      <button id="btn-sidebar" class="btn-icon" title="Sesiones">☰</button>
+      <h1>⚡ ZEUS <span class="subtitle">Consejo de Arquitectos AI</span></h1>
+      <div class="head-right">
+        <span id="session-badge" class="badge" hidden></span>
+        <button id="btn-key" class="btn-icon" title="API key">🔑</button>
+      </div>
+    </header>
+
+    <div id="key-panel" class="key-panel" hidden>
+      <label for="key-input">API key del orquestador (solo si el server define ZEUS_API_KEY)</label>
+      <div class="key-row">
+        <input id="key-input" type="password" placeholder="x-api-key" autocomplete="off">
+        <button id="btn-key-save" class="btn">Guardar</button>
+      </div>
+    </div>
+
+    <div id="chat" aria-live="polite"></div>
+
+    <footer id="composer">
+      <textarea id="input" rows="8" spellcheck="true"
+        placeholder="Escribe tu brief para el consejo…"></textarea>
+      <div class="composer-bar">
+        <button id="btn-template" class="btn btn-ghost" title="Insertar plantilla de brief">Plantilla</button>
+        <span class="hint">Ctrl+Enter envía</span>
+        <button id="btn-send" class="btn btn-primary">Enviar al consejo</button>
+      </div>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
