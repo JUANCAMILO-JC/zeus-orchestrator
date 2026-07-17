@@ -8,6 +8,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { Public } from '../auth/public.decorator';
 import { OrchestratorService, OrchestrationResult } from './orchestrator.service';
 import {
   AgenticOrchestratorService,
@@ -140,8 +141,10 @@ export class OrchestratorController {
 
   /**
    * GET /orchestrate/health
-   * Verificación rápida de que el servicio está vivo.
+   * Verificación rápida de que el servicio está vivo. Público: no expone
+   * datos ni consume tokens, y los monitores externos no tienen la key.
    */
+  @Public()
   @Get('health')
   health() {
     return { status: 'ok', timestamp: new Date().toISOString() };

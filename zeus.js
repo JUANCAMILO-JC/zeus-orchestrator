@@ -14,13 +14,20 @@
  *   node zeus.js --brief "..."      # one-shot: un turno y sale
  *   node zeus.js --resume <id> --brief "..."  # one-shot sobre sesión existente
  *
- * Config: ZEUS_URL (default http://localhost:3000)
+ * Config:
+ *   ZEUS_URL      dirección del server (default http://localhost:3000)
+ *   ZEUS_API_KEY  API key si el server la exige (se envía como x-api-key)
  */
 'use strict';
 
 const readline = require('node:readline');
 
 const BASE_URL = (process.env.ZEUS_URL || 'http://localhost:3000').replace(/\/+$/, '');
+const API_KEY = process.env.ZEUS_API_KEY;
+
+function authHeaders(extra = {}) {
+  return API_KEY ? { ...extra, 'x-api-key': API_KEY } : extra;
+}
 
 // ── Colores ANSI (desactivados si no hay TTY o NO_COLOR) ────────────────────
 
@@ -48,10 +55,19 @@ const truncate = (s, n) => (s && s.length > n ? `${s.slice(0, n)}…` : s || '')
 
 // ── HTTP + SSE ───────────────────────────────────────────────────────────────
 
+function httpError(status, body) {
+  if (status === 401) {
+    return new Error(
+      'el server exige API key (401) — define ZEUS_API_KEY con la misma key del .env del server',
+    );
+  }
+  return new Error(`HTTP ${status}: ${truncate(body, 300)}`);
+}
+
 async function getJson(path) {
-  const res = await fetch(BASE_URL + path);
+  const res = await fetch(BASE_URL + path, { headers: authHeaders() });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${truncate(await res.text(), 300)}`);
+    throw httpError(res.status, await res.text());
   }
   return res.json();
 }
@@ -86,12 +102,12 @@ async function* sseEvents(res) {
 async function postStream(path, body, onAgentEvent) {
   const res = await fetch(BASE_URL + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const contentType = res.headers.get('content-type') || '';
   if (!res.ok || !contentType.includes('text/event-stream')) {
-    throw new Error(`HTTP ${res.status}: ${truncate(await res.text(), 300)}`);
+    throw httpError(res.status, await res.text());
   }
 
   let result = null;
